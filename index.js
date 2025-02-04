@@ -1,52 +1,10 @@
-const {
-    ChainId, UiPoolDataProvider
-}             = require('@aave/contract-helpers');
-const markets = require('@bgd-labs/aave-address-book');
-const ethers  = require('ethers');
-const aave    = require('@aave/math-utils')
-const dayjs   = require('dayjs')
-
-const network = markets.AaveV3Arbitrum;
-const chain = ChainId.arbitrum_one;
-
-const provider = new ethers.providers.JsonRpcProvider(
-    process.env.RPC
-);
+const { protocolReserves, userReserves, aTokenBalance, aToken } = require('./aave/reserves');
 
 // User address to fetch data for, insert address here
 const currentAccount = process.env.ADDRESS;
 
-// View contract used to fetch all reserves data (including market base currency data), and user reserves
-const poolDataProviderContract = new UiPoolDataProvider({
-    uiPoolDataProviderAddress: network.UI_POOL_DATA_PROVIDER,
-    provider,
-    chainId: chain,
-});
-
-let protocolReserves;
-let myReserves;
-
-async function fetchReserves(){
-    // Object containing array of pool reserves and market base currency data
-    // { reservesArray, baseCurrencyData }
-    protocolReserves = await poolDataProviderContract.getReservesHumanized({
-        lendingPoolAddressProvider: network.POOL_ADDRESSES_PROVIDER,
-    });
-
-    const reservesArray = protocolReserves.reservesData;
-    const baseCurrencyData = protocolReserves.baseCurrencyData;
-
-    const currentTimestamp = dayjs().unix();
-
-    const formattedPoolReserves = aave.formatReserves({
-        reserves: reservesArray,
-        currentTimestamp,
-        marketReferenceCurrencyDecimals:
-            baseCurrencyData.marketReferenceCurrencyDecimals,
-        marketReferencePriceInUsd: baseCurrencyData.marketReferenceCurrencyPriceInUsd,
-    });
-
-    const stable = [
+const filterStables = (reserves) => {
+    const stables = [
         'Dai Stablecoin',
         'USD Coin (Arb1)',
         'USD₮0',
@@ -54,42 +12,63 @@ async function fetchReserves(){
         'LUSD Stablecoin'
     ];
 
-    // Get APYs
-    const supplyAPYs = formattedPoolReserves
-    .filter(id => stable.includes(id.name))
+    return reserves
+    .filter(id => stables.includes(id.name))
     .map(id => ({
         name: id.name,
         symbol: id.symbol,
         supplyAPY: (parseFloat(id.supplyAPY) * 100).toFixed(2) + '%',
         aTokenAddress: id.aTokenAddress
     }));
+}
 
-    console.log(supplyAPYs);
+const getBestAPY = (reserves) => {
+    const stables = filterStables(reserves);
 
-    console.log("\nBest APY")
-    const bestSuppyAPY = supplyAPYs.reduce((max, id) => {
+    return stables.reduce((max, id) => {
         const supplyAPYValue = parseFloat(id.supplyAPY);
         return supplyAPYValue > max.supplyAPY ? { ...id, supplyAPY: supplyAPYValue } : max;
     }, { supplyAPY: 0 });
-
-    console.log(bestSuppyAPY);
-
-
 }
 
-async function fetchMyReserves() {
-    // Object containing array or users aave positions and active eMode category
-    // { userReserves, userEmodeCategoryId }
-    const userReserves = await poolDataProviderContract.getUserReservesHumanized({
-        lendingPoolAddressProvider: network.POOL_ADDRESSES_PROVIDER,
-        user: currentAccount,
-    });
-
-    myReserves = userReserves.userReserves.filter(reserve => parseFloat(reserve.scaledATokenBalance) > 0);
-    
-    console.log("\nMy reserves")
-    console.log(myReserves);
+const fetchProtocolReserves = async () => {
+    const reserves = await protocolReserves();
+    return reserves;
 }
-  
-fetchReserves();
-fetchMyReserves();
+
+const fetchMyReserves = async () => {
+    const reserves = await userReserves(currentAccount);
+    return reserves.userReserves.filter(reserve => parseFloat(reserve.scaledATokenBalance) > 0);
+}
+
+async function main() {
+    const reserves = await fetchProtocolReserves();
+    const myReserves = await fetchMyReserves();
+    const stables = filterStables(reserves);
+
+    const date = new Date(Date.now());
+    console.log(`AAVE Stable APY: ${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${date.getMinutes()}:${date.getSeconds()}`)
+    console.log(stables);
+
+    console.log(`\nMy reserves:\n`)
+    for (const id of myReserves) {
+        ////TRACE: console.log(id)
+        const [name ,asset] = await aToken(id.underlyingAsset);
+        const balance = await aTokenBalance(asset, currentAccount);
+        const apy = stables.find(stable => stable.aTokenAddress === asset.A_TOKEN).supplyAPY;
+
+        ////TRACE: console.log(asset)
+        // Is my reserve equals to best APY option?
+        const bestOption = getBestAPY(reserves);
+        if(asset.A_TOKEN === bestOption.aTokenAddress){
+            console.log("You're in the best option")
+        }
+        else{
+            ////TRACE: console.log(bestOption)
+            console.log(`- You're in ${name} with a balance of ${balance} and an APY of ${apy}, losing ${(bestOption.supplyAPY - parseFloat(apy)).toFixed(2)}% cuz the best option is ${bestOption.symbol} with an APY of ${bestOption.supplyAPY}%`);
+            //TODO: swap if possible
+        }
+    }
+} 
+
+main()
