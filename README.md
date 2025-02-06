@@ -18,7 +18,7 @@ cp .env.example .env
 
 Change the values in `.env` and network & chain in `config.js`
 
-Run
+Before run the next command, you MUST fork mainnet, see it in README.md in hardhat folder
 ```bash
 node --env-file .env index.js
 ```
