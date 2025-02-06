@@ -1,4 +1,5 @@
-const { protocolReserves, userReserves, aTokenBalance, aToken } = require('./aave/reserves');
+const { protocolReserves, userReserves, aTokenBalance, aToken, asset } = require('./aave/reserves');
+const { isProfitable } = require('./uniswap/common');
 
 // User address to fetch data for, insert address here
 const currentAccount = process.env.ADDRESS;
@@ -53,20 +54,31 @@ async function main() {
     console.log(`\nMy reserves:\n`)
     for (const id of myReserves) {
         ////TRACE: console.log(id)
-        const [name ,asset] = await aToken(id.underlyingAsset);
-        const balance = await aTokenBalance(asset, currentAccount);
-        const apy = stables.find(stable => stable.aTokenAddress === asset.A_TOKEN).supplyAPY;
+        const [name ,assetInfo] = aToken(id.underlyingAsset);
+        const balance = await aTokenBalance(assetInfo, currentAccount);
+        const apy = stables.find(stable => stable.aTokenAddress === assetInfo.A_TOKEN).supplyAPY;
 
-        ////TRACE: console.log(asset)
-        // Is my reserve equals to best APY option?
+        ////TRACE: console.log(assetInfo)
         const bestOption = getBestAPY(reserves);
-        if(asset.A_TOKEN === bestOption.aTokenAddress){
+        if(assetInfo.A_TOKEN === bestOption.aTokenAddress){
             console.log("You're in the best option")
         }
         else{
             ////TRACE: console.log(bestOption)
             console.log(`- You're in ${name} with a balance of ${balance} and an APY of ${apy}, losing ${(bestOption.supplyAPY - parseFloat(apy)).toFixed(2)}% cuz the best option is ${bestOption.symbol} with an APY of ${bestOption.supplyAPY}%`);
-            //TODO: swap if possible
+            const [,bestAsset] = asset(bestOption.aTokenAddress);
+
+            const [differencial, change] = await isProfitable(assetInfo, bestAsset, balance);
+            console.log(`- You're losing ${(bestOption.supplyAPY - parseFloat(apy)).toFixed(2)}% in AAVE and you have a ${change} of ${Math.abs(differencial.toFixed(2))}% from a swap between ${name} and ${bestOption.symbol} in Uniswap\n`)
+
+            const aavedif = parseFloat((bestOption.supplyAPY - parseFloat(apy)).toFixed(2))
+            const unidif = parseFloat(Math.abs(differencial.toFixed(2)))
+
+            const decission = (unidif - aavedif) > 0 ? 'It is not worth it for ' : 'It is worth it for ';
+            console.log(`${decission} ${Math.abs(unidif - aavedif).toFixed(2)}%\n\n`)
+
+            //TODO: How long would it take you to get it back on a monthly basis if you switch to bestOption?
+            //TODO: Floor of your performance.
         }
     }
 } 

@@ -39,10 +39,23 @@ const userReserves = async (account) => {
     });
 }
 
-const aToken = async (underlyingAsset) => {
+const aToken = (underlyingAsset) => {
     return Object.entries(network.ASSETS).find(([key, asset]) => 
         asset.UNDERLYING.toLowerCase() === underlyingAsset.toLowerCase()
     );
+}
+
+const asset = (aTokenAddress) => {
+    return Object.entries(network.ASSETS).find(([key, asset]) => 
+        asset.A_TOKEN.toLowerCase() === aTokenAddress.toLowerCase()
+    );
+}
+
+const assetName = (id)  => {
+    const [name,] = Object.entries(network.ASSETS).find(([key, asset]) => 
+        asset.id === id
+    );
+    return name;
 }
 
 const aTokenBalance = async (aTokenData, userAccount) => {
@@ -62,5 +75,7 @@ module.exports = {
     protocolReserves, 
     userReserves,
     aToken,
+    asset,
+    assetName,
     aTokenBalance
 }

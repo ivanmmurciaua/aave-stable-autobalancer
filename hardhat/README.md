@@ -1,5 +1,7 @@
 # Blockchain
 
+![Node.js Compatibility](https://img.shields.io/badge/Node.js-%3D%2020.11.0-brightgreen)
+
 ## Usage
 
 Run
